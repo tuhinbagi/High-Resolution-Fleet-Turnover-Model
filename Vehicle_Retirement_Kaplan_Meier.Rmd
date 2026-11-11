@@ -1,0 +1,100 @@
+---
+title: "Vehicle Retirement Curves (Kaplan–Meier)"
+output: html_document
+---
+
+Estimates vehicle survival curves for every California ZIP code and for the state as a whole, from the change in registered vehicles between 2018 and 2019 (EMFAC). These are the `zipcode` and `california` survival curves used by the fleet model.
+
+**Inputs** (in `Data/`, columns `zipcode`, `modelyear`, `vehicles`):
+
+- `Cali2018distributed.csv`, `Cali2019distributed.csv`: registered vehicles by ZIP code and model year
+- `Calistate2018distributed.csv`, `Calistate2019distributed.csv`: statewide registrations by model year (ZIP `11111`)
+
+**Outputs** (written to `Data/`, columns `age`, `probability_of_survival`, `zip`):
+
+- `zipcodesurvivalcurve.csv`: survival probability at ages 0–100 for each ZIP code
+- `californiasurvivalcurve.csv`: statewide survival curve (ZIP `11111`)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyr)
+library(survival)
+
+DATA_DIR    <- "Data"
+MODEL_YEARS <- 1935:2020
+MAX_AGE     <- 100
+STATE_ZIP   <- 11111   # sentinel ZIP for the statewide curve
+```
+
+## Method
+
+Retirements of model year *m* are the drop in registered vehicles between 2018 and 2019 (Equation 4 in the paper), with negative changes set to zero. A vehicle's age is 2019 − *m*. A retirement counts as an observed event when the model year is registered in both years. The Kaplan–Meier estimate is evaluated at ages 0–100: survival is 1 before the first observed age, 0 after the last, and linearly interpolated in between.
+
+```{r km-function}
+km_survival_curve <- function(vehicles2018, vehicles2019) {
+  count2018 <- sapply(MODEL_YEARS, function(y) sum(vehicles2018$vehicles[vehicles2018$modelyear == y]))
+  count2019 <- sapply(MODEL_YEARS, function(y) sum(vehicles2019$vehicles[vehicles2019$modelyear == y]))
+
+  retirements <- data.frame(
+    Age    = 2019 - MODEL_YEARS,
+    Delta  = pmax(count2018 - count2019, 0),
+    InBoth = as.integer(MODEL_YEARS %in% vehicles2018$modelyear &
+                        MODEL_YEARS %in% vehicles2019$modelyear)
+  )
+  if (sum(retirements$Delta) == 0) return(NULL)
+
+  # One row per retired vehicle, then Kaplan-Meier
+  retired <- uncount(retirements, weights = Delta)
+  km_fit  <- survfit(Surv(time = Age, event = InBoth) ~ 1, data = retired)
+
+  # Survival probability at every age 0..MAX_AGE
+  probs <- setNames(rep(NA_real_, MAX_AGE + 1), 0:MAX_AGE)
+  in_range <- km_fit$time >= 0 & km_fit$time <= MAX_AGE
+  probs[as.character(km_fit$time[in_range])] <- km_fit$surv[in_range]
+
+  if (min(km_fit$time) > 0)       probs[as.character(0:(min(km_fit$time) - 1))] <- 1
+  if (max(km_fit$time) < MAX_AGE) probs[as.character((max(km_fit$time) + 1):MAX_AGE)] <- 0
+
+  missing <- is.na(probs)
+  if (any(missing)) {
+    probs[missing] <- approx(km_fit$time, km_fit$surv,
+                             xout = as.numeric(names(probs))[missing], rule = 2)$y
+  }
+
+  data.frame(age = 0:MAX_AGE, probability_of_survival = as.numeric(probs))
+}
+```
+
+## ZIP code curves
+
+```{r zip-curves}
+zip2018 <- read.csv(file.path(DATA_DIR, "Cali2018distributed.csv"))
+zip2019 <- read.csv(file.path(DATA_DIR, "Cali2019distributed.csv"))
+
+zips   <- intersect(unique(zip2018$zipcode), unique(zip2019$zipcode))
+by2018 <- split(zip2018, zip2018$zipcode)
+by2019 <- split(zip2019, zip2019$zipcode)
+
+zip_curves <- bind_rows(lapply(zips, function(zip) {
+  curve <- km_survival_curve(by2018[[as.character(zip)]], by2019[[as.character(zip)]])
+  if (!is.null(curve)) curve$zip <- as.character(zip)
+  curve
+}))
+
+write.csv(zip_curves, file.path(DATA_DIR, "zipcodesurvivalcurve.csv"), row.names = FALSE)
+cat("Survival curves written for", n_distinct(zip_curves$zip), "of", length(zips), "ZIP codes\n")
+```
+
+## Statewide curve
+
+```{r state-curve}
+state2018 <- read.csv(file.path(DATA_DIR, "Calistate2018distributed.csv")) %>% filter(zipcode == STATE_ZIP)
+state2019 <- read.csv(file.path(DATA_DIR, "Calistate2019distributed.csv")) %>% filter(zipcode == STATE_ZIP)
+
+state_curve <- km_survival_curve(state2018, state2019)
+state_curve$zip <- as.character(STATE_ZIP)
+
+write.csv(state_curve, file.path(DATA_DIR, "californiasurvivalcurve.csv"), row.names = FALSE)
+```

@@ -1,0 +1,110 @@
+---
+title: "EV Sales Forecast (Logistic Growth)"
+output: html_document
+---
+
+Projects the EV share of new vehicle sales in every California ZIP code from 2020 to 2050 using a logistic growth curve, for the business-as-usual (BAU) and Advanced Clean Cars II (ACC II) scenarios.
+
+**Input** (in `Data/`):
+
+- `EVpercentageforecast2020_2050_BAU.csv`: historical EV share of new sales by ZIP code (columns `zipcode`, `BEV_Percentage_2015` … `BEV_Percentage_2019`)
+
+**Outputs** (written to `Data/`, columns `zipcode`, `N0`, `K`, `r`, `BEV_Percentage_2020` … `BEV_Percentage_2050`):
+
+- `EV_forecast_BAU_only.csv`: BAU scenario
+- `EV_forecast_ICEban_only.csv`: ACC II scenario
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+
+DATA_DIR       <- "Data"
+BASE_YEAR      <- 2019
+HIST_YEARS     <- 2015:2019
+FORECAST_YEARS <- 2020:2050
+K_BASE         <- 100
+
+# ACC II EV sales targets, 2026-2035 (%)
+ACCII_TARGETS <- c("2026" = 35, "2027" = 43, "2028" = 51, "2029" = 59, "2030" = 68,
+                   "2031" = 76, "2032" = 82, "2033" = 88, "2034" = 94, "2035" = 100)
+```
+
+## Method
+
+EV sales share in year *t* follows
+
+$$N(t) = \\frac{K}{1 + \\frac{K - N_0}{N_0} e^{-r t}}$$
+
+where *N*~0~ is the 2019 EV share, *K* the carrying capacity (100%), and *t* = year − 2019.
+
+The growth rate *r* for each ZIP code is the log-linear growth rate of the EV share between the first year with a positive share and 2019, bounded to [0.01, 0.5]. ZIP codes with a zero share in 2015, or with all shares below 0.01%, get *r* = 0.1. A 2019 share of zero is set to 0.01% so the curve can grow.
+
+```{r functions}
+estimate_growth_rate <- function(pct) {   # pct: EV share, 2015..2019
+  t <- HIST_YEARS - min(HIST_YEARS)
+  if (all(pct < 0.01) || pct[1] == 0) return(0.1)
+
+  positive <- which(pct > 0)
+  if (length(positive) < 2) return(0.1)
+
+  first <- min(positive)
+  last  <- length(pct)
+  r <- log(pct[last] / pct[first]) / (t[last] - t[first])
+  max(0.01, min(r, 0.5))
+}
+
+logistic_growth <- function(t, K, N0, r) {
+  if (N0 <= 0) N0 <- 0.01
+  if (N0 >= K) return(N0)   # already at or above K: hold flat
+  K / (1 + ((K - N0) / N0) * exp(-r * t))
+}
+
+# EV share for every ZIP and forecast year. With accii = TRUE, the ACC II targets
+# set a floor for 2026-2035 and all sales are EVs after 2035.
+forecast_shares <- function(params, K, accii = FALSE) {
+  out <- params %>% mutate(K = K) %>% select(zipcode, N0, K, r)
+  for (year in FORECAST_YEARS) {
+    share <- mapply(logistic_growth, t = year - BASE_YEAR, K = K, N0 = params$N0, r = params$r)
+    if (accii && year > 2035) {
+      share <- rep(100, length(share))
+    } else if (accii && year >= 2026) {
+      share <- pmax(share, ACCII_TARGETS[[as.character(year)]])
+    }
+    out[[paste0("BEV_Percentage_", year)]] <- share
+  }
+  out
+}
+```
+
+## Growth parameters
+
+```{r params}
+ev_hist <- read.csv(file.path(DATA_DIR, "EVpercentageforecast2020_2050_BAU.csv"))
+hist_cols <- paste0("BEV_Percentage_", HIST_YEARS)
+
+params <- data.frame(
+  zipcode = ev_hist$zipcode,
+  N0      = ev_hist$BEV_Percentage_2019,
+  r       = apply(ev_hist[hist_cols], 1, estimate_growth_rate)
+)
+summary(params$r)
+```
+
+## BAU and ACC II forecasts
+
+```{r scenarios}
+bau   <- forecast_shares(params, K_BASE)
+accii <- forecast_shares(params, K_BASE, accii = TRUE)
+
+write.csv(bau,   file.path(DATA_DIR, "EV_forecast_BAU_only.csv"),    row.names = FALSE)
+write.csv(accii, file.path(DATA_DIR, "EV_forecast_ICEban_only.csv"), row.names = FALSE)
+
+# Share of ZIP codes already meeting each ACC II target under BAU
+data.frame(
+  year   = as.integer(names(ACCII_TARGETS)),
+  target = unname(ACCII_TARGETS),
+  pct_zips_meeting_target_in_BAU = sapply(names(ACCII_TARGETS), function(y)
+    round(100 * mean(bau[[paste0("BEV_Percentage_", y)]] >= ACCII_TARGETS[[y]]), 1))
+)
+```
