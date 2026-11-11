@@ -1,0 +1,20 @@
+# Data and outputs (not tracked; see README for data sources)
+Data/*
+!Data/README.md
+results_conditional/
+results/
+plots_conditional/
+
+# R
+*.html
+.Rhistory
+.RData
+.Rproj.user/
+
+# Python / Jupyter
+__pycache__/
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.DS_Store

@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper and this software archive."
+title: "High-Resolution Fleet Turnover Model (HRFTOM)"
+type: software
+license: MIT
+authors:
+  - family-names: Bagi
+    given-names: Tuhin A.
+    affiliation: "University of Michigan"
+    email: tbagi@umich.edu
+  - family-names: Hennesey
+    given-names: Eleanor
+    affiliation: "Arizona State University"
+  - family-names: Syal
+    given-names: Sita M.
+    affiliation: "University of Michigan"
+keywords:
+  - electric vehicles
+  - fleet turnover model
+  - Kaplan-Meier
+  - California
+preferred-citation:
+  type: article
+  title: "High-Resolution Fleet Turnover Model to Assess California's Electric Vehicle Transition"
+  authors:
+    - family-names: Bagi
+      given-names: Tuhin A.
+    - family-names: Hennesey
+      given-names: Eleanor
+    - family-names: Syal
+      given-names: Sita M.
+  journal: "iScience"
+  year: 2026
