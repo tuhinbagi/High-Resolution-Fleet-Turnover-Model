@@ -1,6 +1,6 @@
 # High-Resolution Fleet Turnover Model (HRFTOM)
 
-Code for: Bagi, T. A., Hennesey, E., & Syal, S. M. *High-Resolution Fleet Turnover Model to Assess California's Electric Vehicle Transition.* iScience (2026). DOI: [to be added]
+Code for: Bagi, T. A., Hennesey, E., & Syal, S. M. *High-Resolution Fleet Turnover Model to Assess California's Electric Vehicle Transition.* iScience (2026). DOI: 10.5281/zenodo.24144615
 
 The model projects the light-duty vehicle fleet of every California ZIP code from a 2019 baseline to 2050. It splits each fleet into EVs and internal combustion vehicles (ICE).
 
